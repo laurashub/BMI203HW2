@@ -1,7 +1,8 @@
 import glob
 import os
-from .utils import Atom, Residue, ActiveSite
-
+from .utils import Atom, Residue, ActiveSite, distance_matrix, res_center, get_low_d_rep
+import sys
+import numpy as np
 
 def read_active_sites(dir):
     """
@@ -15,8 +16,8 @@ def read_active_sites(dir):
     active_sites = []
     # iterate over each .pdb file in the given directory
     for filepath in glob.iglob(os.path.join(dir, "*.pdb")):
-
-        active_sites.append(read_active_site(filepath))
+        #change to accomodate splitting chains
+        active_sites += [active_site for active_site in read_active_site(filepath)]
 
     print("Read in %d active sites"%len(active_sites))
 
@@ -39,7 +40,7 @@ def read_active_site(filepath):
     active_site = ActiveSite(name[0])
 
     r_num = 0
-
+    chains = set()
     # open pdb file
     with open(filepath, "r") as f:
         # iterate over each line in the file
@@ -55,20 +56,49 @@ def read_active_site(filepath):
 
                 residue_type = line[17:20]
                 residue_number = int(line[23:26])
+                chain = line[21]
+                
+                chains.add(chain)
 
                 # make a new residue if needed
                 if residue_number != r_num:
-                    residue = Residue(residue_type, residue_number)
+                    residue = Residue(residue_type, residue_number, chain)
                     r_num = residue_number
 
                 # add the atom to the residue
                 residue.atoms.append(atom)
 
             else:  # I've reached a TER card
+                #calculate center of residue
+                residue.center = res_center(residue.atoms)
                 active_site.residues.append(residue)
 
-    return active_site
+    active_sites = split_chains(chains, active_site)
 
+    for active_site in active_sites:
+        active_site.ld_rep = get_low_d_rep(active_site)
+    return active_sites
+
+
+def split_chains(chains, active_site):
+    new_sites = []
+    for chain in sorted(chains):
+        chain_reses = [res for res in active_site.residues if res.chain == chain]
+        if not new_sites: #automatically add first chain
+            new_site = ActiveSite(active_site.name + '_' + chain)
+            new_site.residues = chain_reses
+            new_sites.append(new_site)
+        else:
+            for site in new_sites:
+                if (sorted([chain_res.type for chain_res in chain_reses])
+                    == sorted([res.type for res in site.residues])):
+                    pass  #already added this sequence, ignore
+                else:
+                    #new sequence, create new active site
+                    new_site = ActiveSite(active_site.name + '_' + chain)
+                    new_site.residues = chain_reses
+                    new_sites.append(new_site)
+    return new_sites
 
 def write_clustering(filename, clusters):
     """
@@ -107,3 +137,18 @@ def write_mult_clusterings(filename, clusterings):
                 out.write("%s\n" % clusters[j][k])
 
     out.close()
+
+def read_blosum62(filename):
+    blosum62 = {}
+    with open(filename) as f:
+        lines = f.read().splitlines()
+    aas = [line[0] for line in lines if line[0] != "#" and line[0] != " "]
+    for line in lines:
+        if line[0] not in aas:
+            continue
+        blosum62[line[0]] = {}
+        for aa, score in zip(aas, line.split()[1:]):
+            blosum62[line[0]][aa] = int(score)
+    print (blosum62)
+
+

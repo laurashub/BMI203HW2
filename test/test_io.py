@@ -9,7 +9,7 @@ import os
 def test_residues(filename, names, numbers):
     filepath = os.path.join("data", filename)
 
-    activesite = io.read_active_site(filepath)
+    activesite = io.read_active_site(filepath)[0]
 
     assert [residue.type for residue in activesite.residues] == names
     assert [residue.number for residue in activesite.residues] == numbers
@@ -25,7 +25,7 @@ def test_residues(filename, names, numbers):
 def test_atoms(filename, residue_number, atoms, xs, ys, zs):
     filepath = os.path.join("data", filename)
 
-    activesite = io.read_active_site(filepath)
+    activesite = io.read_active_site(filepath)[0]
 
     residue = activesite.residues[residue_number]
 
