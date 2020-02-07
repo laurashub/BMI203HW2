@@ -4,10 +4,8 @@ import matplotlib.pyplot as plt
 import random
 import numpy as np
 import pandas as pd
-from sklearn.decomposition import PCA
-import umap
+#import umap
 import math
-import itertools
 import sys
 
 """
@@ -245,7 +243,7 @@ def silhouette_score(clusters):
 def _point_similarity(i, cluster):
     dists = [compute_similarity(i, site_b) for site_b in cluster if i != site_b]
     return sum(dists)/len(dists)
-
+"""
 def plot_clusters(clusters, ax, embeddings, title):    
     for cluster in clusters:
         vals = [embeddings[x] for x in cluster]
@@ -277,6 +275,7 @@ def compare_clusters(clusterings, compare = False):
         plot_clusters(clustering, axs[i], embeddings, title)
     plt.tight_layout()
     plt.show()
+"""
 
 
 

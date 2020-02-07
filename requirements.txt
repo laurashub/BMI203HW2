@@ -1,3 +1,5 @@
 scipy>=0.18.1
 numpy>=1.11.2
-pytest>=3.0
+pytest>=3.
+matplotlib>=3.1.1
+pandas>=0.25.3 
