@@ -56,7 +56,11 @@ def read_active_site(filepath):
 
                 residue_type = line[17:20]
                 residue_number = int(line[23:26])
+
+                #get chain, if theres no chain, label it X
                 chain = line[21]
+                if chain == " ":
+                    chain = 'X'
                 
                 chains.add(chain)
 
@@ -118,37 +122,23 @@ def write_clustering(filename, clusters):
     out.close()
 
 
-def write_mult_clusterings(filename, clusterings):
+def write_mult_clusterings(filename, clusterings, clustering_names, 
+    clustering_scs, jaccard):
     """
     Write a series of clusterings of ActiveSite instances out to a file.
 
     Input: a filename and a list of clusterings of ActiveSite instances
     Output: none
     """
-
     out = open(filename, 'w')
 
-    for i in range(len(clusterings)):
-        clusters = clusterings[i]
+    for i, (clusters, name, sc) in enumerate(zip(clusterings, clustering_names, clustering_scs)):
+        out.write("Clustering algorithm: %s, SC: %f\n" % (name, sc))
 
         for j in range(len(clusters)):
             out.write("\nCluster %d\n------------\n" % j)
             for k in range(len(clusters[j])):
                 out.write("%s\n" % clusters[j][k])
-
+        out.write("\n================\n")
+    out.write("Jaccard index: {0:.2f}".format(jaccard))
     out.close()
-
-def read_blosum62(filename):
-    blosum62 = {}
-    with open(filename) as f:
-        lines = f.read().splitlines()
-    aas = [line[0] for line in lines if line[0] != "#" and line[0] != " "]
-    for line in lines:
-        if line[0] not in aas:
-            continue
-        blosum62[line[0]] = {}
-        for aa, score in zip(aas, line.split()[1:]):
-            blosum62[line[0]][aa] = int(score)
-    print (blosum62)
-
-

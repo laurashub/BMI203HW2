@@ -32,7 +32,7 @@ def test_similarity_symmetric():
     for site_a in active_sites:
         for site_b in active_sites:
             assert(cluster.compute_similarity(site_a, site_b) 
-                == cluster.compare_similarity(site_b, site_a))
+                == cluster.compute_similarity(site_b, site_a))
 
 def test_similarity_triangle():
     #should hold, euclidian distance
@@ -65,66 +65,83 @@ def _get_hyp(a, b, c):
     else:
         return(c, a, b)
 
+def test_low_d_rep():
+    pdb_ids = [276]
+    active_sites = _get_active_sites(pdb_ids)
+    
+    ld_rep = np.zeros(20)
+    ld_rep[8] = 4
+    ld_rep[3] = 1
+
+    print(ld_rep)
+    print(active_sites[0].ld_rep[:20])
+    assert all(active_sites[0].ld_rep[:20] == ld_rep)
+
+def test_ld_normalize():
+    pdb_ids = [276, 3458]
+    active_sites = _get_active_sites(pdb_ids)
+    cluster.normalize_reps(active_sites)
+
+    ld_rep1 = np.zeros(20)
+    ld_rep1[8] = 1
+    ld_rep1[3] = 0 #goes to 0 because lowest aspartame
+
+    ld_rep2 = np.zeros(20)
+    ld_rep2[3] = 1
+    ld_rep2[11] = 1
+    ld_rep2[16]  = 1 #threonine
+    ld_rep2[15]  = 1 #serine
+    ld_rep2[5]  = 1 #glutamate
+
+    assert all(active_sites[0].ld_rep[:20] == ld_rep1)
+    assert all(active_sites[1].ld_rep[:20] == ld_rep2)
+
 ###clustering tests
 def test_partition_clustering():
     # tractable subset
 
     #17622 and 19267 chain As are super similar, should be together
     #26095, 34047, 20326 chain Cs are close, should be together
-    pdb_ids = [19267, 17622, 26095, 34047, 20326]
+    pdb_ids = [17622, 19267, 20326, 26095, 34047]
+    active_sites = _get_active_sites(pdb_ids)
 
-
-    active_sites = []
-    for id in pdb_ids:
-        filepath = os.path.join("data", "%i.pdb"%id)
-        active_sites += [active_site for active_site in io.read_active_site(filepath)]
-    cluster1 = active_sites[:2] #A chains of 19267, 17622
+    cluster1 = active_sites[0:3:2] #A chains of 19267, 17622
     cluster2 = active_sites[-3:] # C chains of  26095, 34047, 20326
-    # will this fail sometimes based on cluster initialization?
-    partition_clusters = cluster.cluster_by_partitioning(active_sites)
-    assert cluster1 in partition_clusters
-    assert cluster2 in partition_clusters
+    # bad test, fails occasionally due to cluster initialization - change?
+    partition_clusters, _ = cluster.cluster_by_partitioning(active_sites)
+    #make the ordering within each cluster consistent
+    sorted_partition_clusters = [sorted(cluster, key = lambda x: x.name) for cluster in partition_clusters]
+    assert cluster1 in sorted_partition_clusters
+    assert cluster2 in sorted_partition_clusters
 
 def test_hierarchical_clustering():
     #17622 and 19267 chain As are super similar, should be together
     #26095, 34047, 20326 chain Cs are close, should be together
-    pdb_ids = [19267, 17622, 26095, 34047, 20326]
+    pdb_ids = [17622, 19267, 20326, 26095, 34047]
 
-    active_sites = []
-    for id in pdb_ids:
-        filepath = os.path.join("data", "%i.pdb"%id)
-        active_sites += [active_site for active_site in io.read_active_site(filepath)]
+    active_sites = _get_active_sites(pdb_ids)
     
 
-    cluster1 = active_sites[:2] #A chains of 19267, 17622
+    cluster1 = active_sites[0:3:2]  #A chains of 19267, 17622
     cluster2 = active_sites[-3:] # C chains of  26095, 34047, 20326
     # should be consistent, agglom clustering is determininstic
-    hierarchichal_clusters = cluster.cluster_by_partitioning(active_sites)
-    assert cluster1 in hierarchichal_clusters
-    assert cluster2 in hierarchichal_clusters
+    hierarchical_clusters, _ = cluster.cluster_hierarchically(active_sites)
+    sorted_hierchical_clusters = [sorted(cluster, key = lambda x: x.name) for cluster in hierarchical_clusters]
+    assert cluster1 in sorted_hierchical_clusters
+    assert cluster2 in sorted_hierchical_clusters
 
 
 ###silhouette score
 def test_silhouette_score():
-    site_a = cluster.ActiveSite("A")
-    site_a.ld_rep = np.array([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 
-        1, 1, 1, 1, 1, 1, 1, 1, 1, 4])
+    sites = _toy_sites()
 
-    site_b = cluster.ActiveSite("B")
-    site_b.ld_rep = np.array([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 
-        1, 1, 1, 1, 1, 1, 1, 1, 1, 5])
-
-    site_c = cluster.ActiveSite("C")
-    site_c.ld_rep = np.array([0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 
-        1, 1, 1, 1, 1, 1, 1, 1, 1, 4])
-
-    site_d = cluster.ActiveSite("D")
-    site_d.ld_rep = np.array([0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 
-        1, 1, 1, 1, 1, 1, 1, 1, 1, 5])
+    #silhouette score of all single clusters should be 0
+    single_clusters = [[site] for site in sites]
+    assert cluster.silhouette_score(single_clusters) == 0
 
     #more similar clusters together
-    assert (cluster.silhouette_score([[site_a, site_b], [site_c, site_d]]) > 
-        cluster.silhouette_score([[site_a, site_c], [site_b, site_d]]))
+    assert (cluster.silhouette_score([sites[:2], sites[-2:]]) > 
+        cluster.silhouette_score([sites[0:3:2], sites[1:4:2]]))
 
 #### tests for helper/utility functions
 def test_res_center():
@@ -157,16 +174,49 @@ def test_split_chains():
         active_sites += [active_site for active_site in io.read_active_site(filepath)]
     assert len(active_sites) == 3 #split 34088, combine 39299 
 
-def _all_active_sites():
-    dir = os.getcwd()
-    files = glob.glob(dir + '/*.pdb')
+def test_jaccard_index():
+    sites = _toy_sites()
 
+    #empty clusters, return 1
+    assert cluster.compare_clusters([], []) == 1
+
+    #assert jaccard of identical clusters is 1
+    assert cluster.compare_clusters([sites[:2], sites[-2:]], [sites[:2], sites[-2:]]) == 1
+
+    #completely disparate clusters should be 0
+    assert cluster.compare_clusters([sites[:2], sites[-2:]], [sites[0:3:2], sites[1:4:2]]) == 0
+
+
+def _all_active_sites():
+    active_sites = io.read_active_sites('data')
+    cluster.normalize_reps(active_sites)
+    return active_sites
+
+
+def _get_active_sites(pdb_ids):
     active_sites = []
-    # iterate over each .pdb file in the given directory
-    for filepath in glob.iglob(os.path.join(dir, "*.pdb")):
+    for id in pdb_ids:
+        filepath = os.path.join("data", "%i.pdb"%id)
         active_sites += [active_site for active_site in io.read_active_site(filepath)]
     return active_sites
 
+def _toy_sites():
+    site_a = cluster.ActiveSite("A")
+    site_a.ld_rep = np.array([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 4])
+
+    site_b = cluster.ActiveSite("B")
+    site_b.ld_rep = np.array([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 5])
+
+    site_c = cluster.ActiveSite("C")
+    site_c.ld_rep = np.array([0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 4])
+
+    site_d = cluster.ActiveSite("D")
+    site_d.ld_rep = np.array([0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 5])
+    return [site_a, site_b, site_c, site_d]
 
 
 

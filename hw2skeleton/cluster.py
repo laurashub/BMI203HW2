@@ -1,10 +1,9 @@
-from .utils import Atom, Residue, ActiveSite, Cluster
-from .io import read_blosum62
+from .utils import Atom, Residue, ActiveSite, Cluster, normalize_reps
 import matplotlib.pyplot as plt
 import random
 import numpy as np
 import pandas as pd
-#import umap
+import umap
 import math
 import sys
 
@@ -37,6 +36,8 @@ def compute_similarity(site_a, site_b):
     """
 
     #TODO: make sure both site_a and site_b have a low-d rep
+    assert site_a.ld_rep is not None
+    assert site_b.ld_rep is not None
 
     #sum of difference of the two representations
     #return sum(list(map(lambda x: abs(x[0] - x[1]), 
@@ -67,26 +68,29 @@ def kpp(active_sites, k):
     return centroids
 
 def kmeans(k, active_sites):
+    #k-means++ cluster initialization
     centroids = kpp(active_sites, k)
     
     #initialize empty clusters
     clusters = [[] for i in range(k)]
 
+    #repeat until converge
     while True:
-        #new clusters
+        #empty new clusters
         new_clusters = [[] for i in range(k)]
 
-        #assign points to clusters
+        #assign points to clusters based on distante metric
         for active_site in active_sites:
-            index = np.argmin(np.array([compute_similarity(active_site, centroid) for centroid in centroids]))
-            new_clusters[index].append(active_site)
+            new_clusters[np.argmin(np.array(
+                [compute_similarity(active_site, centroid) for centroid in centroids]))].append(active_site)
         #if clusters converged, you're done
         if new_clusters == clusters:
             break
         #else, calculate new centroids and go again
         clusters = new_clusters
+
+        #get new centroids, mean of current active sites in each cluster
         centroids = [compute_centroid(cluster, active_sites = active_sites) for cluster in clusters]
-    #print(clusters)
     return clusters, silhouette_score(clusters)
 
 def compute_centroid(cluster, active_sites = None, name = 'centroid'):
@@ -100,9 +104,10 @@ def compute_centroid(cluster, active_sites = None, name = 'centroid'):
     else:
         return active_sites[random.sample(range(len(active_sites)), 1)[0]]
 
-def repeat_k(k, active_sites, num_repeats = 10):
+def repeat_k(k, active_sites, num_repeats = 50):
     """
     Try a few times, this is to account for bad initial clusters
+        -still need after different cluster initialization?
     """
     best_clusters = None
     best_sc = float("-inf")
@@ -135,14 +140,17 @@ def cluster_by_partitioning(active_sites):
             best_sc = sc
             best_clusters = clusters
     #compare_clusters(all_clusters)
-    return best_clusters
+    return best_clusters, best_sc
 
 def create_matrix(clusters, dist = False):
+    #generate distance matrix between all clusters
     df = pd.DataFrame(index = clusters, columns = clusters)
     for cluster_a in clusters:
         for cluster_b in clusters:
             if dist:
                 sim = 0
+            #distance to itself is nan, this is for taking the min later
+            #in reality, distance is 0
             elif cluster_a == cluster_b:
                 sim = np.nan
             else:
@@ -157,15 +165,15 @@ def update_matrix(df, new_cluster, old_a, old_b, dist):
     for i in range(2):
         for old_cluster in old_a, old_b:
             df = df.drop(old_cluster, axis=i)
-
+    #make sure they're actually gone
     assert old_a not in df.index and old_a not in df.columns
     assert old_b not in df.index and old_a not in df.columns
 
-    #add new column/row
+    #add new column/row with distances from all other clusters to new cluster
     data = {}
     for cluster in df.index:
         data[cluster] = compute_similarity(new_cluster, cluster)
-    data[new_cluster] = np.nan
+    data[new_cluster] = np.nan #self dist is NaN for min to work
     new_data = pd.Series(data=data, name=new_cluster)
     df = df.append(new_data) #add row
     df[new_cluster] = new_data #add col - unnecessary?
@@ -183,14 +191,17 @@ def cluster_hierarchically(active_sites):
     """
 
     # Fill in your code here!
+
+    #each point starts as its own unique cluster
     clusters = [Cluster([active_site], active_site.ld_rep)
      for active_site in active_sites]
 
+     #initial distance matrix, each cluster to each other cluster
     df = create_matrix(clusters)
     all_clusters = []
     best_clusters = None
     best_sc = float("-inf")
-    #all_clusters = [] #keep track of clusters
+
     #run until all sites are joined
     while df.shape[0] > 1:
         #find two closest in distances
@@ -200,18 +211,22 @@ def cluster_hierarchically(active_sites):
         new_cluster_sites = df.index[ri].active_sites + df.columns[ci].active_sites
         new_cluster = Cluster(new_cluster_sites, compute_centroid(new_cluster_sites).ld_rep)
 
-        #update distance and aggregation
+        #update distance
         df= update_matrix(df, new_cluster, df.index[ri],  
             df.columns[ci], df.iloc[ri][ci])
+
+        #get current clusters
         current_clusters = [cluster.active_sites for cluster in df.index]
+
+        #check silhouette score, return clusters with the best
         if len(current_clusters) < 10 and len(current_clusters) > 2:
             sc = silhouette_score(current_clusters)
             if sc > best_sc:
                 best_clusters = current_clusters
                 best_sc = sc
             all_clusters.append(current_clusters)
-    compare_clusters(all_clusters)
-    return best_clusters
+    #compare_clusters(all_clusters)
+    return best_clusters, best_sc
 
 #check implementation
 
@@ -221,7 +236,6 @@ def silhouette_score(clusters):
         return -1
     # the mean s(i) over all data of the entire dataset 
     # is a measure of how appropriately the data have been clustered
-
     scores = []
     for cluster_a in clusters:
         for i in cluster_a:
@@ -243,14 +257,56 @@ def silhouette_score(clusters):
 def _point_similarity(i, cluster):
     dists = [compute_similarity(i, site_b) for site_b in cluster if i != site_b]
     return sum(dists)/len(dists)
-"""
-def plot_clusters(clusters, ax, embeddings, title):    
+
+def compare_clusters(clusters_a, clusters_b, plot = False):
+    #jaccard index
+    #j(C, C') = n_11/(n_11, n_10, n_01)
+    if plot:
+        plot_clusters([clusters_a, clusters_b])
+
+    #if both are empty, return 1
+    if not clusters_a and not clusters_b:
+        return 1
+
+    n11, n00, n10, n01 = 0, 0, 0, 0
+    #get active sites by unpacking cluster
+    sites = [site for cluster in clusters_a for site in cluster]
+    for site_a in sites:
+        for site_b in sites:
+            if site_a != site_b: #site should be in the same cluster as itself, if not something is wrong
+                #check if they are in the same cluster in each clustering
+                same_a = _same_cluster(site_a, site_b, clusters_a)
+                same_b = _same_cluster(site_a, site_b, clusters_b)
+                #update n_xs
+                #same cluster in both
+                if same_a == same_b == True:
+                    n11 += 1
+                #same in a, not b
+                elif same_a and not same_b:
+                    n10 += 1
+                #same in b, not a
+                elif same_b and not same_a:
+                    n01 += 1
+                #not in the same in either clustering
+                else:
+                    n00 += 1
+    #print(n11, n10, n01, n00)
+    return n11/(n11 + n10 + n01)
+
+
+def _same_cluster(site_a, site_b, clusters):
+    a_index = [site_a in cluster for cluster in clusters].index(True)
+    b_index = [site_b in cluster for cluster in clusters].index(True)
+    return a_index == b_index
+
+
+def _plot_cluster(clusters, ax, embeddings, title):    
     for cluster in clusters:
         vals = [embeddings[x] for x in cluster]
         ax.scatter([val[0] for val in vals], [val[1] for val in vals])
     ax.set_title("{1}, nc = {2}, sc = {0:.2f}".format(silhouette_score(clusters), title, len(clusters)))
 
-def compare_clusters(clusterings, compare = False):
+def plot_clusters(clusterings):
     if len(clusterings) == 1:
         return 
     #list of active sites
@@ -265,17 +321,14 @@ def compare_clusters(clusterings, compare = False):
     for site, em in zip(sites, embedding):
         embeddings[site] = em
 
-    fig, axs = plt.subplots(ncols = len(clusterings), figsize=(7*len(clusterings), 5))
-    if compare:
-        titles = ['k-means', 'agglomerative']
-    else:
-        titles = list(range(len(clusterings)))
+    fig, axs = plt.subplots(ncols = len(clusterings), figsize=(6*len(clusterings), 5))
+    titles = ['k-means', 'agglomerative']
     #for i,(title, clustering) in enumerate(zip(["k-means", "agglomerative"],[clusters_a, clusters_b])):
     for i, (clustering, title) in enumerate(zip(clusterings, titles)):
-        plot_clusters(clustering, axs[i], embeddings, title)
+        _plot_cluster(clustering, axs[i], embeddings, title)
     plt.tight_layout()
-    plt.show()
-"""
+    plt.savefig('compare_clusters.png')
+
 
 
 
