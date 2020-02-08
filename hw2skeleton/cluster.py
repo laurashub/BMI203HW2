@@ -170,9 +170,16 @@ def update_matrix(df, new_cluster, old_a, old_b, dist):
     assert old_b not in df.index and old_a not in df.columns
 
     #add new column/row with distances from all other clusters to new cluster
+    #using complete linkage clustering
     data = {}
     for cluster in df.index:
-        data[cluster] = compute_similarity(new_cluster, cluster)
+        site_bs = cluster.active_sites
+        #get max distance between active sites in this cluster 
+        #to active sites in each other cluster
+        new_dist = max([compute_similarity(site_a, site_b) 
+            for site_a in new_cluster.active_sites
+            for site_b in site_bs])
+        data[cluster] = new_dist
     data[new_cluster] = np.nan #self dist is NaN for min to work
     new_data = pd.Series(data=data, name=new_cluster)
     df = df.append(new_data) #add row
@@ -261,8 +268,6 @@ def _point_similarity(i, cluster):
 def compare_clusters(clusters_a, clusters_b, plot = False):
     #jaccard index
     #j(C, C') = n_11/(n_11, n_10, n_01)
-    if plot:
-        plot_clusters([clusters_a, clusters_b])
 
     #if both are empty, return 1
     if not clusters_a and not clusters_b:
@@ -291,7 +296,10 @@ def compare_clusters(clusters_a, clusters_b, plot = False):
                 else:
                     n00 += 1
     #print(n11, n10, n01, n00)
-    return n11/(n11 + n10 + n01)
+    ji = n11/(n11 + n10 + n01)
+    if plot:
+         plot_clusters([clusters_a, clusters_b], ji)
+    return ji
 
 
 def _same_cluster(site_a, site_b, clusters):
@@ -306,30 +314,28 @@ def _plot_cluster(clusters, ax, embeddings, title):
         ax.scatter([val[0] for val in vals], [val[1] for val in vals])
     ax.set_title("{1}, nc = {2}, sc = {0:.2f}".format(silhouette_score(clusters), title, len(clusters)))
 
-def plot_clusters(clusterings):
+def plot_clusters(clusterings, ji):
     if len(clusterings) == 1:
         return 
     #list of active sites
     sites = [site for cluster in clusterings[0] for site in cluster]
     
-    #pca = PCA(n_components=2)
-    #embedding = pca.fit_transform([site.ld_rep for site in sites])
+    #get UMAP embedding for visualization
     reducer = umap.UMAP()
     embedding = reducer.fit_transform([site.ld_rep for site in sites])
-    #get 2d rep
+    
+    #assign embedding to site for consistend vis across clusterings
     embeddings = {}
     for site, em in zip(sites, embedding):
         embeddings[site] = em
 
     fig, axs = plt.subplots(ncols = len(clusterings), figsize=(6*len(clusterings), 5))
     titles = ['k-means', 'agglomerative']
-    #for i,(title, clustering) in enumerate(zip(["k-means", "agglomerative"],[clusters_a, clusters_b])):
     for i, (clustering, title) in enumerate(zip(clusterings, titles)):
         _plot_cluster(clustering, axs[i], embeddings, title)
+    plt.suptitle("Jaccard index: {0:.3f}".format(ji))
     plt.tight_layout()
     plt.savefig('compare_clusters.png')
-
-
 
 
 #not using

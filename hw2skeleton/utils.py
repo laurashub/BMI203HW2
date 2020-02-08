@@ -81,8 +81,10 @@ def normalize_reps(active_sites):
     dist_scale = sum([np.mean(new_vals[i]) for i in range(len(new_vals)-1)])
     
     scale = np.ones(21)
-    scale[20] = 10 #weight distance so its considered before aa comp
-    #scale[20] = 10
+    #weight distance so its considered before aa comp, 
+    #gives nicer looking clusters  
+    scale[20] = dist_scale * 3
+    #scale[20] = dist_scale
     #scale = np.ones(20)
     #add in scaling factor for specific amino acid based on occurence?
     for i, active_site in enumerate(active_sites):
