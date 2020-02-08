@@ -29,7 +29,7 @@ def read_active_site(filepath):
     Read in a single active site given a PDB file
 
     Input: PDB file path
-    Output: ActiveSite instance
+    Output: List of active sites in PDB
     """
     basename = os.path.basename(filepath)
     name = os.path.splitext(basename)
@@ -77,14 +77,19 @@ def read_active_site(filepath):
                 residue.center = res_center(residue.atoms)
                 active_site.residues.append(residue)
 
+    #split current active site based on the different chains present
     active_sites = split_chains(chains, active_site)
 
+    #get the lowd rep here so we dont have to calculate it every time
     for active_site in active_sites:
         active_site.ld_rep = get_low_d_rep(active_site)
     return active_sites
 
 
 def split_chains(chains, active_site):
+    """
+    Reads and splits chains within the active site, removes identical chains
+    """
     new_sites = []
     for chain in sorted(chains):
         chain_reses = [res for res in active_site.residues if res.chain == chain]
@@ -127,7 +132,8 @@ def write_mult_clusterings(filename, clusterings, clustering_names,
     """
     Write a series of clusterings of ActiveSite instances out to a file.
 
-    Input: a filename and a list of clusterings of ActiveSite instances
+    Input: a filename and a list of clusterings of ActiveSite instances, names 
+        of clustering algorithms, silhouette scores, jaccard index between the clusterings
     Output: none
     """
     out = open(filename, 'w')

@@ -48,7 +48,7 @@ class ActiveSite:
 
 class Cluster:
     """
-    Holds information about a cluster
+    Holds information about a cluster, used in hierarchical clustering
     """
     def __init__(self, active_sites, ld_rep):
         self.active_sites = active_sites
@@ -61,7 +61,6 @@ class Cluster:
 def normalize_reps(active_sites):
     """
     Normalize and scale the elements of the representations 
-
     Could be nicer-looking probably
 
     """
@@ -84,9 +83,7 @@ def normalize_reps(active_sites):
     #weight distance so its considered before aa comp, 
     #gives nicer looking clusters  
     scale[20] = dist_scale * 3
-    #scale[20] = dist_scale
-    #scale = np.ones(20)
-    #add in scaling factor for specific amino acid based on occurence?
+
     for i, active_site in enumerate(active_sites):
         new_ld = np.array([scale[j]*new_vals[j][i] for j in range(stacked.shape[1])])
         active_site.ld_rep = new_ld
@@ -108,6 +105,9 @@ def res_center(atoms):
     return(tuple(map(lambda x: sum(x)/len(atoms), list(zip(*[atom.coords for atom in atoms])))))
 
 def distance_matrix(residues):
+    """
+    Calculate distance between center of each residue 
+    """
     centers = [res.center for res in residues]
 
     #populate array with distances
@@ -120,6 +120,9 @@ def distance_matrix(residues):
     return dists
 
 def _3d_distance(coords_a, coords_b):
+    """
+    3d euclidean distance
+    """
     return math.sqrt(sum(map(lambda x: (x[0] - x[1])**2, zip(coords_a, coords_b))))
 
 AAs = ['ALA', 'ARG', 'ASN', 'ASP', 'CYS', 'GLU', 'GLN', 'GLY',

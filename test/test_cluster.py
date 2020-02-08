@@ -1,7 +1,5 @@
 from hw2skeleton import cluster
 from hw2skeleton import io
-#from hw2skeleton import utils
-
 import os
 import numpy as np
 import glob
@@ -121,7 +119,6 @@ def test_hierarchical_clustering():
 
     active_sites = _get_active_sites(pdb_ids)
     
-
     cluster1 = active_sites[0:3:2]  #A chains of 19267, 17622
     cluster2 = active_sites[-3:] # C chains of  26095, 34047, 20326
     # should be consistent, agglom clustering is determininstic

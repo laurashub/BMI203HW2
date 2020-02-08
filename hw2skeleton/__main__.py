@@ -22,6 +22,7 @@ if sys.argv[1][0:2] == '-H':
     clustering, _ = cluster_hierarchically(active_sites)
     write_clustering(sys.argv[3], clustering)
 
+#compare both clustering algorithms, generate comparison plot
 if sys.argv[1][0:2] == '-C':
     print("Comparing both clustering methods")
     partition_clusters, partition_sc = cluster_by_partitioning(active_sites)
